@@ -31,14 +31,14 @@ If it's necessary to return to the already parsed rows and cells, they can be st
 
 ### Features
 
-Returned `std::string_view` by `raw()` and `trimed()` member functions are valid as long as the parser object is alive:
+Returned `std::string_view` by `raw()` and `trimmed()` member functions are valid as long as the parser object is alive:
 
 ```c++
 std::vector<std::string_view> cities;
 for (const auto row : parser)
 {
     const auto [city, state] = row.cells(0, 1);
-    cities.push_back(city.trimed());
+    cities.push_back(city.trimmed());
 }
 ```
 
