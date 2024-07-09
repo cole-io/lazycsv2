@@ -196,6 +196,28 @@ class mmap_source
     explicit mmap_source(const std::string& path)
     {
     	#ifdef _WIN32
+    		// convenient but hideous functor for producing an error string from GetLastError()
+    		auto get_error_string = [](DWORD error) -> std::string {
+
+				char* raw_error_text;
+				
+    			if(!FormatMessage(
+    					FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS,
+    					0,
+    					error,
+    					MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+    					(LPTSTR)&raw_error_text,
+    					0,
+    					0
+    				))
+    					return "";
+    				else {
+    					std::string error_text{raw_error_text};
+    					LocalFree(raw_error_text);
+    					return error_text;
+    				}
+    				
+    		};
 			fd_ = CreateFile(path.c_str(), 
 					GENERIC_READ,
 					0,
@@ -206,11 +228,11 @@ class mmap_source
 				);
 				
 			if (fd_ == INVALID_HANDLE_VALUE)
-				throw error{"can't open file, path: " + path};
+				throw error{"error: can't open \"" + path + "\": " + get_error_string(GetLastError()) + '\n'};
 
 			if(!GetFileSizeEx(fd_, (PLARGE_INTEGER)&size_)) 
 			{
-				throw error{"can't get file size, error:"};
+				throw error{"error: can't read size of file: " + get_error_string(GetLastError()) + '\n'};
 				CloseHandle(fd_);
 			}
 			if(size_ > 0)
@@ -225,7 +247,7 @@ class mmap_source
 				);
 				if(!WIN_hmap_) {
 					CloseHandle(fd_);
-					throw error{"can't map file, error: "};
+					throw error{"error: can't open file for reading: " + get_error_string(GetLastError()) + '\n'};
 				}
 				
 				data_ = static_cast<const char*>(MapViewOfFile(
@@ -238,19 +260,19 @@ class mmap_source
 				if(!data_) {
 					CloseHandle(fd_);
 					CloseHandle(WIN_hmap_);
-					throw error{"can't map file, error: "};
+					throw error{"error: can't read file: " + get_error_string(GetLastError()) + '\n'};
 				}
 			} // if(size_ > 0)
     	#else
         	fd_ = open(path.c_str(), O_RDONLY | O_CLOEXEC);
         	if (fd_ == -1)
-            	throw error{ "can't open file, path: " + path + ", error:"};
+            	throw error{"error: can't open \"" + path + "\": " + std::string{std::strerror(errno)} + '\n' };
 
         	struct stat sb = {};
         	if (fstat(fd_, &sb) == -1)
         	{
             	close(fd_);
-            	throw error{ "can't get file size, error:" };
+            	throw error{"error: can't read size of \"" + path + "\": " + std::string{std::strerror(errno)} + '\n'};
         	}
 
         	size_ = sb.st_size;
@@ -261,7 +283,7 @@ class mmap_source
             	if (data_ == MAP_FAILED)
             	{
                 	close(fd_);
-                	throw error{ "can't mmap file, error:" };
+                	throw error{"error: can't open file for reading: " + std::string{std::strerror(errno)} + '\n'};
             	}
         	}
         	else
