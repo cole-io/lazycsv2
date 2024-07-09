@@ -1,7 +1,7 @@
-#include <lazycsv.hpp>
+#include "../include/lazycsv.hpp"
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest.h>
+#include "doctest/doctest.h"
 
 template<class T>
 void check_rows(const T& parser, const std::vector<std::vector<std::string>>& expected_rows)

@@ -9,10 +9,20 @@
 #include <string>
 #include <string_view>
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifdef _WIN32
+	#define NOMINMAX
+	#define WIN32_LEAN_AND_MEAN
+	#include <Windows.h>
+	#define FD_TYPE HANDLE
+	#define HMAP_TYPE HANDLE
+#else
+	#include <fcntl.h>
+	#include <sys/mman.h>
+	#include <sys/stat.h>
+	#include <unistd.h>
+	#define FD_TYPE int
+	#define HMAP_TYPE struct {} // handles to maps don't exist on POSIX system
+#endif
 
 namespace lazycsv
 {
@@ -180,37 +190,83 @@ class mmap_source
 {
     const char* data_{ nullptr };
     size_t size_;
-    int fd_;
-
+    FD_TYPE fd_; // HANDLE for win32, int for POSIX
+    HMAP_TYPE WIN_hmap_; // only used on win32 for a handle to the memory map
   public:
     explicit mmap_source(const std::string& path)
     {
-        fd_ = open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd_ == -1)
-            throw error{ "can't open file, path: " + path + ", error:" + std::string{ std::strerror(errno) } };
+    	#ifdef _WIN32
+			fd_ = CreateFile(path.c_str(), 
+					GENERIC_READ,
+					0,
+					nullptr,
+					OPEN_EXISTING,
+					FILE_ATTRIBUTE_NORMAL,
+					0
+				);
+				
+			if (fd_ == INVALID_HANDLE_VALUE)
+				throw error{"can't open file, path: " + path};
 
-        struct stat sb = {};
-        if (fstat(fd_, &sb) == -1)
-        {
-            close(fd_);
-            throw error{ "can't get file size, error:" + std::string{ std::strerror(errno) } };
-        }
+			if(!GetFileSizeEx(fd_, (PLARGE_INTEGER)&size_)) 
+			{
+				throw error{"can't get file size, error:"};
+				CloseHandle(fd_);
+			}
+			if(size_ > 0)
+			{
+				WIN_hmap_ = CreateFileMapping(
+					fd_,
+					0,
+					PAGE_READONLY,
+					0,
+					0,
+					0
+				);
+				if(!WIN_hmap_) {
+					CloseHandle(fd_);
+					throw error{"can't map file, error: "};
+				}
+				
+				data_ = static_cast<const char*>(MapViewOfFile(
+					WIN_hmap_,
+					FILE_MAP_READ,
+					0,
+					0,
+					0
+				));
+				if(!data_) {
+					CloseHandle(fd_);
+					CloseHandle(WIN_hmap_);
+					throw error{"can't map file, error: "};
+				}
+			} // if(size_ > 0)
+    	#else
+        	fd_ = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        	if (fd_ == -1)
+            	throw error{ "can't open file, path: " + path + ", error:"};
 
-        size_ = sb.st_size;
+        	struct stat sb = {};
+        	if (fstat(fd_, &sb) == -1)
+        	{
+            	close(fd_);
+            	throw error{ "can't get file size, error:" };
+        	}
 
-        if (size_ > 0)
-        {
-            data_ = static_cast<const char*>(mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd_, 0U));
-            if (data_ == MAP_FAILED)
-            {
-                close(fd_);
-                throw error{ "can't mmap file, error:" + std::string{ std::strerror(errno) } };
-            }
-        }
-        else
-        {
-            close(fd_);
-        }
+        	size_ = sb.st_size;
+
+        	if (size_ > 0)
+        	{
+            	data_ = static_cast<const char*>(mmap(nullptr, size_, PROT_READ, MAP_PRIVATE, fd_, 0U));
+            	if (data_ == MAP_FAILED)
+            	{
+                	close(fd_);
+                	throw error{ "can't mmap file, error:" };
+            	}
+        	}
+        	else
+            	close(fd_);
+        #endif
     }
 
     mmap_source(const mmap_source&) = delete;
@@ -220,6 +276,7 @@ class mmap_source
         : data_(other.data_)
         , size_(other.size_)
         , fd_(other.fd_)
+        , WIN_hmap_(other.WIN_hmap_)
     {
         other.data_ = nullptr;
     }
@@ -229,6 +286,7 @@ class mmap_source
         std::swap(data_, other.data_);
         std::swap(size_, other.size_);
         std::swap(fd_, other.fd_);
+        std::swap(WIN_hmap_, other.WIN_hmap_);
         return *this;
     }
 
@@ -246,8 +304,14 @@ class mmap_source
     {
         if (data_)
         {
-            munmap(const_cast<char*>(data_), size_);
-            close(fd_);
+        	#ifdef _WIN32
+    			UnmapViewOfFile(data_);
+    			CloseHandle(WIN_hmap_);
+    			CloseHandle(fd_);
+        	#else
+            	munmap(const_cast<char*>(data_), size_);
+            	close(fd_);
+            #endif
         }
     }
 };
@@ -279,6 +343,7 @@ class parser
 
     auto end() const
     {
+    	// this should be fine for windows systems since the newline character is in the same position
         auto pos = source_.data() + source_.size() + 1;
         if (source_.size() && *(pos - 2) == '\n') // skip the last new line if exists
             pos--;
