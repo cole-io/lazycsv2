@@ -166,13 +166,13 @@ struct trim_chars
   public:
     constexpr static auto trim(const char* begin, const char* end)
     {
-        const char* trimed_begin = begin;
-        while (trimed_begin != end && is_trim_char(*trimed_begin, Trim_chars...))
-            ++trimed_begin;
-        const char* trimed_end = end;
-        while (trimed_end != trimed_begin && is_trim_char(*(trimed_end - 1), Trim_chars...))
-            --trimed_end;
-        return std::pair{ trimed_begin, trimed_end };
+        const char* trimmed_begin = begin;
+        while (trimmed_begin != end && is_trim_char(*trimmed_begin, Trim_chars...))
+            ++trimmed_begin;
+        const char* trimmed_end = end;
+        while (trimmed_end != trimmed_begin && is_trim_char(*(trimmed_end - 1), Trim_chars...))
+            --trimmed_end;
+        return std::pair{ trimmed_begin, trimmed_end };
     }
 };
 
@@ -295,7 +295,7 @@ class parser
         int index = 0;
         for (const auto cell : header())
         {
-            if (column_name == cell.trimed())
+            if (column_name == cell.trimmed())
                 return index;
             index++;
         }
@@ -326,20 +326,20 @@ class parser
             return std::string_view(begin_, end_ - begin_);
         }
 
-        auto trimed() const
+        auto trimmed() const
         {
-            auto [trimed_begin, trimed_end] = trim_policy::trim(begin_, end_);
-            return std::string_view(trimed_begin, trimed_end - trimed_begin);
+            auto [trimmed_begin, trimmed_end] = trim_policy::trim(begin_, end_);
+            return std::string_view(trimmed_begin, trimmed_end - trimmed_begin);
         }
 
         auto unescaped() const
         {
-            auto [trimed_begin, trimed_end] = trim_policy::trim(begin_, end_);
+            auto [trimmed_begin, trimmed_end] = trim_policy::trim(begin_, end_);
             std::string result;
-            result.reserve(trimed_end - trimed_begin);
-            for (const auto* i = trimed_begin; i < trimed_end; i++)
+            result.reserve(trimmed_end - trimmed_begin);
+            for (const auto* i = trimmed_begin; i < trimmed_end; i++)
             {
-                if (*i == quote_char::value && i + 1 < trimed_end && *(i + 1) == quote_char::value)
+                if (*i == quote_char::value && i + 1 < trimmed_end && *(i + 1) == quote_char::value)
                     i++;
                 result.push_back(*i);
             }
