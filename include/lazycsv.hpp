@@ -193,7 +193,7 @@ class mmap_source
     FD_TYPE fd_; // HANDLE for win32, int for POSIX
     HMAP_TYPE WIN_hmap_; // only used on win32 for a handle to the memory map
   public:
-    explicit mmap_source(const std::string& path)
+    explicit mmap_source(std::string_view path)
     {
     	#ifdef _WIN32
     		// convenient but hideous functor for producing an error string from GetLastError()
@@ -218,7 +218,7 @@ class mmap_source
     				}
     				
     		};
-			fd_ = CreateFile(path.c_str(), 
+			fd_ = CreateFile(path.data(), 
 					GENERIC_READ,
 					0,
 					nullptr,
@@ -228,11 +228,11 @@ class mmap_source
 				);
 				
 			if (fd_ == INVALID_HANDLE_VALUE)
-				throw error{"error: can't open \"" + path + "\": " + get_error_string(GetLastError()) + '\n'};
+				throw error{"error: can't open \"" + std::string(path) + "\": " + get_error_string(GetLastError()) + '\n'};
 
 			if(!GetFileSizeEx(fd_, (PLARGE_INTEGER)&size_)) 
 			{
-				throw error{"error: can't read size of file: " + get_error_string(GetLastError()) + '\n'};
+				throw error{"error: can't read size of \"" + std::string(path) + "\": " + get_error_string(GetLastError()) + '\n'};
 				CloseHandle(fd_);
 			}
 			if(size_ > 0)
@@ -264,15 +264,15 @@ class mmap_source
 				}
 			} // if(size_ > 0)
     	#else
-        	fd_ = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        	fd_ = open(path.data(), O_RDONLY | O_CLOEXEC);
         	if (fd_ == -1)
-            	throw error{"error: can't open \"" + path + "\": " + std::string{std::strerror(errno)} + '\n' };
+            	throw error{"error: can't open \"" + std::string(path) + "\": " + std::string{std::strerror(errno)} + '\n' };
 
         	struct stat sb = {};
         	if (fstat(fd_, &sb) == -1)
         	{
             	close(fd_);
-            	throw error{"error: can't read size of \"" + path + "\": " + std::string{std::strerror(errno)} + '\n'};
+            	throw error{"error: can't read size of \"" + std::string(path) + "\": " + std::string{std::strerror(errno)} + '\n'};
         	}
 
         	size_ = sb.st_size;
